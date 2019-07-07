@@ -107,9 +107,11 @@ int main(int argc, char* argv[]) {
 //        putpixel(screen, x, y, SDL_MapRGB(screen->format, r, g, b));
     }
 
-    const Vertex v0 = {random() % 640, random() % 480, 0, 0, random() % 255, random() % 255, random() % 255}; 
-    const Vertex v1 = {random() % 640, random() % 480, 0, 0, random() % 255, random() % 255, random() % 255}; 
-    const Vertex v2 = {random() % 640, random() % 480, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    const Vertex v2 = {10, 10, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    const Vertex v1 = {250, 300, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    const Vertex v0 = {500, 50, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    cout << v0.x << endl;
+    cout << v0.y << endl;
 
     drawTriangle(v0, v1, v2, screen);
 
@@ -180,8 +182,10 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
   ParameterEquation b(v0.b, v1.b, v2.b, e0, e1, e2, area);
 
   // Check if triangle is backfacing.
-  if (area < 0)
+  if (area < 0) {
+      cout << "Here" << endl;
     return;
+  }
 
   // Add 0.5 to sample at pixel centers.
   for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += 1.0f)
