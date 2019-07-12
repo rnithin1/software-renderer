@@ -78,8 +78,15 @@ struct ParameterEquation {
     }
 };
 
+struct BaryCoords {
+    float r;
+    float g;
+    float b;
+};
+
 void putpixel(SDL_Surface*, int, int, Uint32);
 void drawTriangle(const Vertex&, const Vertex&, const Vertex&, SDL_Surface*);
+BaryCoords* getBarycentricCoordinates(const Vertex&, const Vertex&, const Vertex&, int, int);
 
 int main(int argc, char* argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
@@ -107,9 +114,9 @@ int main(int argc, char* argv[]) {
 ////        putpixel(surface, x, y, SDL_MapRGB(surface->format, r, g, b));
 //    }
 
-    const Vertex v0 = {500, 50, 0, 0, 35, 35, 35}; //random() % 255, random() % 255, random() % 255}; 
-    const Vertex v1 = {250, 300, 0, 0, 35, 35, 35}; //random() % 255, random() % 255, random() % 255}; 
-    const Vertex v2 = {10, 10, 0, 0, 35, 35, 35}; //random() % 255, random() % 255, random() % 255}; 
+    const Vertex v0 = {500, 50, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    const Vertex v1 = {250, 300, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    const Vertex v2 = {10, 10, 0, 0, random() % 255, random() % 255, random() % 255}; 
 
     drawTriangle(v0, v1, v2, surface);
 
@@ -189,14 +196,28 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += 1.0f) {
         for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += 1.0f) {
             if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
-                int rint = r.evaluate(x, y) * 255;
-                int gint = g.evaluate(x, y) * 255;
-                int bint = b.evaluate(x, y) * 255;
-                Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
+                //int rint = r.evaluate(x, y) * 255;
+                //int gint = g.evaluate(x, y) * 255;
+                //int bint = b.evaluate(x, y) * 255;
+                auto bc = getBarycentricCoordinates(v0, v1, v2, x, y);
+                Uint32 color = SDL_MapRGB(surface->format, bc->r, bc->g, bc->b);
                 putpixel(surface, x, y, color);
             }
         }
     }
 }
 
-
+BaryCoords* getBarycentricCoordinates(const Vertex& v0, const Vertex& v1, const Vertex& v2, int px, int py) {
+    float denom = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y); 
+    float wv0 = ((v1.y - v2.y) * (px - v2.x) + (v2.x - v1.x) * (py - v2.y)) / denom; 
+    float wv1 = ((v2.y - v0.y) * (px - v2.x) + (v0.x - v2.x) * (py - v2.y)) / denom;
+    float wv2 = 1 - wv0 - wv1;
+    float r = wv0 * v0.r + wv1 * v1.r + wv2 * v2.r;
+    float g = wv0 * v0.g + wv1 * v1.g + wv2 * v2.g;
+    float b = wv0 * v0.b + wv1 * v1.b + wv2 * v2.b;
+    BaryCoords* bc;
+    bc->r = r;
+    bc->g = g;
+    bc->b = b;
+    return bc;
+}
