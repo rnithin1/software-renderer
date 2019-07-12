@@ -82,11 +82,14 @@ struct BaryCoords {
     float r;
     float g;
     float b;
+    float wv0;
+    float wv1;
+    float wv2;
 };
 
 void putpixel(SDL_Surface*, int, int, Uint32);
 void drawTriangle(const Vertex&, const Vertex&, const Vertex&, SDL_Surface*);
-BaryCoords* getBarycentricCoordinates(const Vertex&, const Vertex&, const Vertex&, int, int);
+BaryCoords* getBarycentricCoordinates(const Vertex&, const Vertex&, const Vertex&, float, float);
 
 int main(int argc, char* argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
@@ -195,11 +198,12 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     // Add 0.5 to sample at pixel centers.
     for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += 1.0f) {
         for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += 1.0f) {
-            if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
+            auto bc = getBarycentricCoordinates(v0, v1, v2, x, y);
+            //if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
+            if (bc->wv0 >= 0 && bc->wv1 >= 0 && bc->wv2 >= 0) {
                 //int rint = r.evaluate(x, y) * 255;
                 //int gint = g.evaluate(x, y) * 255;
                 //int bint = b.evaluate(x, y) * 255;
-                auto bc = getBarycentricCoordinates(v0, v1, v2, x, y);
                 Uint32 color = SDL_MapRGB(surface->format, bc->r, bc->g, bc->b);
                 putpixel(surface, x, y, color);
             }
@@ -207,7 +211,9 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     }
 }
 
-BaryCoords* getBarycentricCoordinates(const Vertex& v0, const Vertex& v1, const Vertex& v2, int px, int py) {
+BaryCoords* getBarycentricCoordinates(const Vertex& v0, const Vertex& v1, const Vertex& v2, 
+        float px, float py) {
+
     float denom = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y); 
     float wv0 = ((v1.y - v2.y) * (px - v2.x) + (v2.x - v1.x) * (py - v2.y)) / denom; 
     float wv1 = ((v2.y - v0.y) * (px - v2.x) + (v0.x - v2.x) * (py - v2.y)) / denom;
@@ -215,9 +221,12 @@ BaryCoords* getBarycentricCoordinates(const Vertex& v0, const Vertex& v1, const 
     float r = wv0 * v0.r + wv1 * v1.r + wv2 * v2.r;
     float g = wv0 * v0.g + wv1 * v1.g + wv2 * v2.g;
     float b = wv0 * v0.b + wv1 * v1.b + wv2 * v2.b;
-    BaryCoords* bc;
+    BaryCoords* bc = (BaryCoords*) malloc(sizeof(BaryCoords));
     bc->r = r;
     bc->g = g;
     bc->b = b;
+    bc->wv0 = wv0;
+    bc->wv1 = wv1;
+    bc->wv2 = wv2;
     return bc;
 }
