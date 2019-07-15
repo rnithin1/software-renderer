@@ -36,19 +36,38 @@ struct EdgeEquation {
         tie = a != 0 ? a > 0 : b > 0;
     }
   
-    /// Evaluate the edge equation for the given point.
+    // Evaluate the edge equation for the given point.
     float evaluate(float x, float y) {
         return a * x + b * y + c;
     }
   
-    /// Test if the given point is inside the edge.
+    // Test if the given point is inside the edge.
     bool test(float x, float y) {
         return test(evaluate(x, y));
     }
   
-    /// Test for a given evaluated value.
+    // Test for a given evaluated value.
     bool test(float v) {
         return (v > 0 || (v == 0 && tie));
+    }
+
+    float stepX(float v) const {
+        return v + a;
+    }
+
+    // Step the equation value v to the x direction.
+    float stepX(float v, float stepSize) const {
+        return v + a * stepSize;
+    }
+
+    // Step the equation value v to the y direction.
+    float stepY(float v) const {
+        return v + b;
+    }
+
+    // Step the equation value vto the y direction.
+    float stepY(float v, float stepSize) const {
+        return v + b * stepSize;
     }
 };
 
@@ -72,9 +91,28 @@ struct ParameterEquation {
         c = factor * (p0 * e0.c + p1 * e1.c + p2 * e2.c);
     }
   
-    /// Evaluate the parameter equation for the given point.
+    // Evaluate the parameter equation for the given point.
     float evaluate(float x, float y) {
         return a * x + b * y + c;
+    }
+
+    float stepX(float v) const {
+        return v + a;
+    }
+
+    // Step the equation value v to the x direction.
+    float stepX(float v, float stepSize) const {
+        return v + a * stepSize;
+    }
+
+    // Step the equation value v to the y direction.
+    float stepY(float v) const {
+        return v + b;
+    }
+
+    // Step the equation value vto the y direction.
+    float stepY(float v, float stepSize) const {
+        return v + b * stepSize;
     }
 };
 
@@ -102,6 +140,66 @@ struct BaryCoords {
         b = wv0 * v0.b + wv1 * v1.b + wv2 * v2.b;
     }
 
+};
+
+struct TriangleEquations {
+    float area;
+
+    EdgeEquation e0;
+    EdgeEquation e1;
+    EdgeEquation e2;
+
+    ParameterEquation r;
+    ParameterEquation g;
+    ParameterEquation b;
+
+    TriangleEquations(
+            const Vertex &v0, 
+            const Vertex &v1, 
+            const Vertex &v2) {
+
+        e0.init(v0, v1);
+        e1.init(v1, v2);
+        e2.init(v2, v0);
+
+        area = 0.5f * (e0.c + e1.c + e2.c);
+
+        // Cull backfacing triangles.
+        if (area < 0) {
+            return;
+        }
+
+        r.init(v0.r, v1.r, v2.r, e0, e1, e2, area);
+        g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
+        b.init(v0.b, v1.b, v2.b, e0, e1, e2, area);
+    }
+};
+
+struct PixelData {
+    float r;
+    float g;
+    float b;
+
+    /// Initialize pixel data for the given pixel coordinates.
+    void init(const TriangleEquations &eqn, float x, float y) {
+        r = eqn.r.evaluate(x, y);
+        g = eqn.g.evaluate(x, y);
+        b = eqn.b.evaluate(x, y);
+    }
+
+    /// Step all the pixel data in the x direction.
+    void stepX(const TriangleEquations &eqn) {
+        r = eqn.r.stepX(r);
+        g = eqn.g.stepX(g);
+        b = eqn.b.stepX(b);
+    }
+
+    /// Step all the pixel data in the y direction.
+    void stepY(const TriangleEquations &eqn) {
+        r = eqn.r.stepY(r);
+        g = eqn.g.stepY(g);
+        b = eqn.b.stepY(b);
+    }
 };
 
 void putpixel(SDL_Surface*, int, int, Uint32);
@@ -202,9 +300,9 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
   
     float area = 0.5 * (e0.c + e1.c + e2.c);
   
-    //ParameterEquation r(v0.r, v1.r, v2.r, e0, e1, e2, area);
-    //ParameterEquation g(v0.g, v1.g, v2.g, e0, e1, e2, area);
-    //ParameterEquation b(v0.b, v1.b, v2.b, e0, e1, e2, area);
+    ParameterEquation r(v0.r, v1.r, v2.r, e0, e1, e2, area);
+    ParameterEquation g(v0.g, v1.g, v2.g, e0, e1, e2, area);
+    ParameterEquation b(v0.b, v1.b, v2.b, e0, e1, e2, area);
   
     // Check if triangle is backfacing.
     if (area < 0) {
@@ -214,13 +312,14 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     // Add 0.5 to sample at pixel centers.
     for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += 1.0f) {
         for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += 1.0f) {
-            BaryCoords bc(v0, v1, v2, x, y);
-            //if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
-            if (bc.wv0 >= 0 && bc.wv1 >= 0 && bc.wv2 >= 0) {
-                //int rint = r.evaluate(x, y) * 255;
-                //int gint = g.evaluate(x, y) * 255;
-                //int bint = b.evaluate(x, y) * 255;
-                Uint32 color = SDL_MapRGB(surface->format, bc.r, bc.g, bc.b);
+//            BaryCoords bc(v0, v1, v2, x, y);
+            if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
+            //if (bc.wv0 >= 0 && bc.wv1 >= 0 && bc.wv2 >= 0) {
+                int rint = r.evaluate(x, y) * 255;
+                int gint = g.evaluate(x, y) * 255;
+                int bint = b.evaluate(x, y) * 255;
+                Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
+                //Uint32 color = SDL_MapRGB(surface->format, bc.r, bc.g, bc.b);
                 putpixel(surface, x, y, color);
             }
         }
