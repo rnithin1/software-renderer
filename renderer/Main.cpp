@@ -85,21 +85,37 @@ struct BaryCoords {
     float wv0;
     float wv1;
     float wv2;
+
+    BaryCoords(
+            const Vertex& v0, 
+            const Vertex& v1,
+            const Vertex& v2,
+            float px,
+            float py) {
+        
+        float denom = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y); 
+        wv0 = ((v1.y - v2.y) * (px - v2.x) + (v2.x - v1.x) * (py - v2.y)) / denom; 
+        wv1 = ((v2.y - v0.y) * (px - v2.x) + (v0.x - v2.x) * (py - v2.y)) / denom;
+        wv2 = 1 - wv0 - wv1;
+        r = wv0 * v0.r + wv1 * v1.r + wv2 * v2.r;
+        g = wv0 * v0.g + wv1 * v1.g + wv2 * v2.g;
+        b = wv0 * v0.b + wv1 * v1.b + wv2 * v2.b;
+    }
+
 };
 
 void putpixel(SDL_Surface*, int, int, Uint32);
 void drawTriangle(const Vertex&, const Vertex&, const Vertex&, SDL_Surface*);
-BaryCoords* getBarycentricCoordinates(const Vertex&, const Vertex&, const Vertex&, float, float);
 
 int main(int argc, char* argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
 
     SDL_Window *window = SDL_CreateWindow(
-      "SDL2Test",
+      "Render",
       SDL_WINDOWPOS_UNDEFINED,
       SDL_WINDOWPOS_UNDEFINED,
       640,
-      480,
+      639,
       0
     );
 
@@ -117,9 +133,9 @@ int main(int argc, char* argv[]) {
 ////        putpixel(surface, x, y, SDL_MapRGB(surface->format, r, g, b));
 //    }
 
-    const Vertex v0 = {500, 50, 0, 0, random() % 255, random() % 255, random() % 255}; 
-    const Vertex v1 = {250, 300, 0, 0, random() % 255, random() % 255, random() % 255}; 
-    const Vertex v2 = {10, 10, 0, 0, random() % 255, random() % 255, random() % 255}; 
+    const Vertex v0 = {500, 50, 0, 0, 0, 0, 200}; //random() % 255, random() % 255, random() % 255}; 
+    const Vertex v1 = {250, 300, 0, 0, 0, 200, 0}; //random() % 255, random() % 255, random() % 255}; 
+    const Vertex v2 = {10, 10, 0, 0, 200, 0, 0}; //random() % 255, random() % 255, random() % 255}; 
 
     drawTriangle(v0, v1, v2, surface);
 
@@ -186,9 +202,9 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
   
     float area = 0.5 * (e0.c + e1.c + e2.c);
   
-    ParameterEquation r(v0.r, v1.r, v2.r, e0, e1, e2, area);
-    ParameterEquation g(v0.g, v1.g, v2.g, e0, e1, e2, area);
-    ParameterEquation b(v0.b, v1.b, v2.b, e0, e1, e2, area);
+    //ParameterEquation r(v0.r, v1.r, v2.r, e0, e1, e2, area);
+    //ParameterEquation g(v0.g, v1.g, v2.g, e0, e1, e2, area);
+    //ParameterEquation b(v0.b, v1.b, v2.b, e0, e1, e2, area);
   
     // Check if triangle is backfacing.
     if (area < 0) {
@@ -198,35 +214,16 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     // Add 0.5 to sample at pixel centers.
     for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += 1.0f) {
         for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += 1.0f) {
-            auto bc = getBarycentricCoordinates(v0, v1, v2, x, y);
+            BaryCoords bc(v0, v1, v2, x, y);
             //if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
-            if (bc->wv0 >= 0 && bc->wv1 >= 0 && bc->wv2 >= 0) {
+            if (bc.wv0 >= 0 && bc.wv1 >= 0 && bc.wv2 >= 0) {
                 //int rint = r.evaluate(x, y) * 255;
                 //int gint = g.evaluate(x, y) * 255;
                 //int bint = b.evaluate(x, y) * 255;
-                Uint32 color = SDL_MapRGB(surface->format, bc->r, bc->g, bc->b);
+                Uint32 color = SDL_MapRGB(surface->format, bc.r, bc.g, bc.b);
                 putpixel(surface, x, y, color);
             }
         }
     }
 }
 
-BaryCoords* getBarycentricCoordinates(const Vertex& v0, const Vertex& v1, const Vertex& v2, 
-        float px, float py) {
-
-    float denom = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y); 
-    float wv0 = ((v1.y - v2.y) * (px - v2.x) + (v2.x - v1.x) * (py - v2.y)) / denom; 
-    float wv1 = ((v2.y - v0.y) * (px - v2.x) + (v0.x - v2.x) * (py - v2.y)) / denom;
-    float wv2 = 1 - wv0 - wv1;
-    float r = wv0 * v0.r + wv1 * v1.r + wv2 * v2.r;
-    float g = wv0 * v0.g + wv1 * v1.g + wv2 * v2.g;
-    float b = wv0 * v0.b + wv1 * v1.b + wv2 * v2.b;
-    BaryCoords* bc = (BaryCoords*) malloc(sizeof(BaryCoords));
-    bc->r = r;
-    bc->g = g;
-    bc->b = b;
-    bc->wv0 = wv0;
-    bc->wv1 = wv1;
-    bc->wv2 = wv2;
-    return bc;
-}
