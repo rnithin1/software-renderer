@@ -29,7 +29,7 @@ struct EdgeEquation {
     float c;
     bool tie;
   
-    EdgeEquation(const Vertex &v0, const Vertex &v1) {
+    void init (const Vertex &v0, const Vertex &v1) {
         a = v0.y - v1.y;
         b = v1.x - v0.x;
         c = -(a * (v0.x + v1.x) + b * (v0.y + v1.y)) / 2;
@@ -37,17 +37,17 @@ struct EdgeEquation {
     }
   
     // Evaluate the edge equation for the given point.
-    float evaluate(float x, float y) {
+    float evaluate(float x, float y) const {
         return a * x + b * y + c;
     }
   
     // Test if the given point is inside the edge.
-    bool test(float x, float y) {
+    bool test(float x, float y) const {
         return test(evaluate(x, y));
     }
   
     // Test for a given evaluated value.
-    bool test(float v) {
+    bool test(float v) const {
         return (v > 0 || (v == 0 && tie));
     }
 
@@ -76,7 +76,7 @@ struct ParameterEquation {
     float b;
     float c;
   
-    ParameterEquation(
+    void init (
         float p0,
         float p1,
         float p2,
@@ -92,7 +92,7 @@ struct ParameterEquation {
     }
   
     // Evaluate the parameter equation for the given point.
-    float evaluate(float x, float y) {
+    float evaluate(float x, float y) const {
         return a * x + b * y + c;
     }
 
@@ -202,6 +202,81 @@ struct PixelData {
     }
 };
 
+struct EdgeData {
+    float ev0;
+    float ev1;
+    float ev2;
+
+    /// Initialize the edge data values.
+    void init(const TriangleEquations &eqn, float x, float y) {
+        ev0 = eqn.e0.evaluate(x, y);
+        ev1 = eqn.e1.evaluate(x, y);
+        ev2 = eqn.e2.evaluate(x, y);
+    }
+
+    /// Step the edge values in the x direction.
+    void stepX(const TriangleEquations &eqn) {
+        ev0 = eqn.e0.stepX(ev0);
+        ev1 = eqn.e1.stepX(ev1);
+        ev2 = eqn.e2.stepX(ev2);
+    }
+
+    /// Step the edge values in the x direction.
+    void stepX(const TriangleEquations &eqn, float stepSize) {
+        ev0 = eqn.e0.stepX(ev0, stepSize);
+        ev1 = eqn.e1.stepX(ev1, stepSize);
+        ev2 = eqn.e2.stepX(ev2, stepSize);
+    }
+
+    /// Step the edge values in the y direction.
+    void stepY(const TriangleEquations &eqn) {
+        ev0 = eqn.e0.stepY(ev0);
+        ev1 = eqn.e1.stepY(ev1);
+        ev2 = eqn.e2.stepY(ev2);
+    }
+
+    /// Step the edge values in the y direction.
+    void stepY(const TriangleEquations &eqn, float stepSize) {
+        ev0 = eqn.e0.stepY(ev0, stepSize);
+        ev1 = eqn.e1.stepY(ev1, stepSize);
+        ev2 = eqn.e2.stepY(ev2, stepSize);
+    }
+
+    /// Test for triangle containment.
+    bool test(const TriangleEquations &eqn) {
+        return eqn.e0.test(ev0) && eqn.e1.test(ev1) && eqn.e2.test(ev2);
+    }
+};
+
+
+/*
+struct PixelData {
+    float r;
+    float g;
+    float b;
+
+    /// Initialize pixel data for the given pixel coordinates.
+    void init(const TriangleEquations &eqn, float x, float y) {
+        r = eqn.r.evaluate(x, y);
+        g = eqn.g.evaluate(x, y);
+        b = eqn.b.evaluate(x, y);
+    }
+
+    /// Step all the pixel data in the x direction.
+    void stepX(const TriangleEquations &eqn) {
+        r = eqn.r.stepX(r);
+        g = eqn.g.stepX(g);
+        b = eqn.b.stepX(b);
+    }
+
+    /// Step all the pixel data in the y direction.
+    void stepY(const TriangleEquations &eqn) {
+        r = eqn.r.stepY(r);
+        g = eqn.g.stepY(g);
+        b = eqn.b.stepY(b);
+    }
+};
+*/
 void putpixel(SDL_Surface*, int, int, Uint32);
 void drawTriangle(const Vertex&, const Vertex&, const Vertex&, SDL_Surface*);
 
@@ -235,7 +310,12 @@ int main(int argc, char* argv[]) {
     const Vertex v1 = {250, 300, 0, 0, 0, 200, 0}; //random() % 255, random() % 255, random() % 255}; 
     const Vertex v2 = {10, 10, 0, 0, 200, 0, 0}; //random() % 255, random() % 255, random() % 255}; 
 
+    const Vertex v3 = {500, 600, 0, 0, 0, 0, 200}; //random() % 255, random() % 255, random() % 255}; 
+    const Vertex v4 = {250, 630, 0, 0, 0, 200, 0}; //random() % 255, random() % 255, random() % 255}; 
+    const Vertex v5 = {10, 590, 0, 0, 200, 0, 0}; //random() % 255, random() % 255, random() % 255}; 
+
     drawTriangle(v0, v1, v2, surface);
+    drawTriangle(v3, v4, v5, surface);
 
     SDL_UpdateWindowSurface(window);
 
@@ -279,6 +359,19 @@ void putpixel(SDL_Surface *surface, int x, int y, Uint32 pixel) {
     }
 }
 
+/*
+void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surface* surface) {
+
+    int blockSize = 16;
+    TriangleEquations eqn(v0, v1, v2);
+
+    // Check if triangle is back-facing.
+    if (eqn.area < 0) {
+        return;
+    }
+}*/
+
+
 void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surface* surface) {
 
     // Compute triangle bounding box.
@@ -294,15 +387,17 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
   //  maxY = min(maxY, m_maxY);
   
     // Compute edge equations.
-    EdgeEquation e0(v0, v1);
-    EdgeEquation e1(v1, v2);
-    EdgeEquation e2(v2, v0);
+    EdgeEquation e0, e1, e2;
+    e0.init(v0, v1);
+    e1.init(v1, v2);
+    e2.init(v2, v0);
   
     float area = 0.5 * (e0.c + e1.c + e2.c);
   
-    ParameterEquation r(v0.r, v1.r, v2.r, e0, e1, e2, area);
-    ParameterEquation g(v0.g, v1.g, v2.g, e0, e1, e2, area);
-    ParameterEquation b(v0.b, v1.b, v2.b, e0, e1, e2, area);
+    ParameterEquation r, g, b;
+    r.init(v0.r, v1.r, v2.r, e0, e1, e2, area);
+    g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
+    b.init(v0.b, v1.b, v2.b, e0, e1, e2, area);
   
     // Check if triangle is backfacing.
     if (area < 0) {
