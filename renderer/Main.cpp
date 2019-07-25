@@ -248,75 +248,31 @@ struct EdgeData {
     }
 };
 
-struct PixelData {
-    float r;
-    float g;
-    float b;
-
-    /// Initialize pixel data for the given pixel coordinates.
-    void init(const TriangleEquations &eqn, float x, float y) {
-        r = eqn.r.evaluate(x, y);
-        g = eqn.g.evaluate(x, y);
-        b = eqn.b.evaluate(x, y);
-    }
-
-    /// Step all the pixel data in the x direction.
-    void stepX(const TriangleEquations &eqn) {
-        r = eqn.r.stepX(r);
-        g = eqn.g.stepX(g);
-        b = eqn.b.stepX(b);
-    }
-
-    /// Step all the pixel data in the y direction.
-    void stepY(const TriangleEquations &eqn) {
-        r = eqn.r.stepY(r);
-        g = eqn.g.stepY(g);
-        b = eqn.b.stepY(b);
-    }
-};
-
-template <bool TestEdges>
-void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface) {
-  int blockSize = 1;
-  PixelData po;
-  po.init(eqn, x, y);
-
-  EdgeData eo;
-  if (TestEdges)
-    eo.init(eqn, x, y);
-
-  for (float yy = y; yy < y + blockSize; yy += 1.0f)
-  {
-    PixelData pi = po;
-
-    EdgeData ei;
-    if (TestEdges)
-      ei = eo;
-
-    for (float xx = x; xx < x + blockSize; xx += 1.0f)
-    {
-      if (!TestEdges || ei.test(eqn))
-      {
-        int rint = (int)(pi.r * 255);
-        int gint = (int)(pi.g * 255);
-        int bint = (int)(pi.b * 255);
-        Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
-        putpixel(surface, (int)xx, (int)yy, color);
-      }
-
-      pi.stepX(eqn);
-      if (TestEdges)
-        ei.stepX(eqn);
-    }
-
-    po.stepY(eqn);
-    if (TestEdges)
-      eo.stepY(eqn);
-  }
-}
+//class PixelShader : public PixelShaderBase<PixelShader> {
+//public:
+//  static const bool InterpolateZ = false;
+//  static const bool InterpolateW = false;
+//  static const int VarCount = 3;
+//
+//  static SDL_Surface* surface;
+//
+//  static void drawPixel(const PixelData &p)
+//  {
+//    int rint = (int)(p.var[0] * 255);
+//    int gint = (int)(p.var[1] * 255);
+//    int bint = (int)(p.var[2] * 255);
+//
+//    Uint32 color = rint << 16 | gint << 8 | bint;
+//
+//    Uint32 *buffer = (Uint32*)((Uint8 *)surface->pixels + (int)p.y * surface->pitch + (int)p.x * 4);
+//    *buffer = color;
+//  }
+//};
 
 void putpixel(SDL_Surface*, int, int, Uint32);
 void drawTriangle(const Vertex&, const Vertex&, const Vertex&, SDL_Surface*);
+template<bool>
+void rasterizeBlock(const TriangleEquations&, float, float, SDL_Surface*);
 
 int main(int argc, char* argv[]) {
     SDL_Init(SDL_INIT_VIDEO);
@@ -428,11 +384,11 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     minY = minY & ~(blockSize - 1);
     maxY = maxY & ~(blockSize - 1);
 
-    float s = (float)BlockSize - 1;
+    float s = (float)blockSize - 1;
 
   // Add 0.5 to sample at pixel centers
-  for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += BlockSize)
-  for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += BlockSize)
+  for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += blockSize) {
+  for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += blockSize)
   {
     // Test if block is inside or outside triangle or touches it
     EdgeData e00; e00.init(eqn, x, y);
@@ -456,20 +412,22 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
       bool e10Same = e10_0 == e10_1 == e10_2;
       bool e11Same = e11_0 == e11_1 == e11_2;
 
-      if (!e00Same || !e01Same || !e10Same || !e11Same)
-        PixelShader::template drawBlock<true>(eqn, x, y);
-    }
-    else if (result == 4)
+      //if (!e00Same || !e01Same || !e10Same || !e11Same)
+//        PixelShader::template drawBlock<true>(eqn, x, y);
+    //}
+    if (result == 4)
     {
       // Fully Covered
-      rasterizeBlock<false>(eqn, x, y);
+      rasterizeBlock<false>(eqn, x, y, surface);
     }
     else
     {
       // Partially Covered
-      rasterizeBlock<true>(eqn, x, y);
+      rasterizeBlock<true>(eqn, x, y, surface);
     }
   }
+}
+}
 }
 
   
@@ -509,3 +467,42 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     }
 }*/
 
+template <bool TestEdges>
+void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface) {
+  int blockSize = 1;
+  PixelData po;
+  po.init(eqn, x, y);
+
+  EdgeData eo;
+  if (TestEdges)
+    eo.init(eqn, x, y);
+
+  for (float yy = y; yy < y + blockSize; yy += 1.0f)
+  {
+    PixelData pi = po;
+
+    EdgeData ei;
+    if (TestEdges)
+      ei = eo;
+
+    for (float xx = x; xx < x + blockSize; xx += 1.0f)
+    {
+      if (!TestEdges || ei.test(eqn))
+      {
+        int rint = (int)(pi.r * 255);
+        int gint = (int)(pi.g * 255);
+        int bint = (int)(pi.b * 255);
+        Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
+        putpixel(surface, (int)xx, (int)yy, color);
+      }
+
+      pi.stepX(eqn);
+      if (TestEdges)
+        ei.stepX(eqn);
+    }
+
+    po.stepY(eqn);
+    if (TestEdges)
+      eo.stepY(eqn);
+  }
+}
