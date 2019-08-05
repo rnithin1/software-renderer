@@ -5,6 +5,10 @@ using namespace std;
 
 const int MaxAVars = 16;
 const int MaxPVars = 16;
+const int aVarCount = 16;
+const int pVarCount = 16;
+
+int blockSize = 1;
 
 struct Vertex {
 	float x; // The x component.
@@ -153,6 +157,11 @@ struct TriangleEquations {
     ParameterEquation g;
     ParameterEquation b;
 
+    ParameterEquation z;
+	ParameterEquation invw;
+	ParameterEquation avar[MaxAVars];
+    ParameterEquation pvar[MaxPVars];
+
     TriangleEquations(
             const Vertex &v0, 
             const Vertex &v1, 
@@ -163,6 +172,12 @@ struct TriangleEquations {
         e2.init(v2, v0);
 
         area = 0.5f * (e0.c + e1.c + e2.c);
+        float factor = 1.0f / area;
+        z.init(v0.z, v1.z, v2.z, e0, e1, e2, factor);
+
+        float invw0 = 1.0f / v0.w;
+		float invw1 = 1.0f / v1.w;
+        float invw2 = 1.0f / v2.w;
 
         // Cull backfacing triangles.
         if (area < 0) {
@@ -172,6 +187,16 @@ struct TriangleEquations {
         r.init(v0.r, v1.r, v2.r, e0, e1, e2, area);
         g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
         b.init(v0.b, v1.b, v2.b, e0, e1, e2, area);
+
+        invw.init(invw0, invw1, invw2, e0, e1, e2, factor);
+
+		for (int i = 0; i < aVarCount; ++i) {
+			avar[i].init(v0.avar[i], v1.avar[i], v2.avar[i], e0, e1, e2, factor);
+        }
+
+		for (int i = 0; i < pVarCount; ++i) {
+pvar[i].init(v0.pvar[i] * invw0, v1.pvar[i] * invw1, v2.pvar[i] * invw2, e0, e1, e2, factor);
+        }
     }
 };
 
@@ -180,26 +205,87 @@ struct PixelData {
     float g;
     float b;
 
+    float x;
+    float y;
+
     /// Initialize pixel data for the given pixel coordinates.
-    void init(const TriangleEquations &eqn, float x, float y) {
+    void init(const TriangleEquations &eqn, float xi, float yi) {
+        x = xi;
+        y = yi;
+
         r = eqn.r.evaluate(x, y);
         g = eqn.g.evaluate(x, y);
         b = eqn.b.evaluate(x, y);
     }
-
-    /// Step all the pixel data in the x direction.
+    // Initialize pixel data for the given pixel coordinates.
+//	void init(const TriangleEquations &eqn, float x, float y, int aVarCount, int pVarCount, bool interpolateZ, bool interpolateW) {
+//
+//		if (interpolateZ)
+//			z = eqn.z.evaluate(x, y);
+//if (interpolateW || pVarCount > 0) { invw = eqn.invw.evaluate(x, y);
+//			w = 1.0f / invw;
+//		}
+//
+//		for (int i = 0; i < aVarCount; ++i) {
+//			avar[i] = eqn.avar[i].evaluate(x, y);
+//        }
+//
+//		for (int i = 0; i < pVarCount; ++i) {
+//			pvarTemp[i] = eqn.pvar[i].evaluate(x, y);
+//			pvar[i] = pvarTemp[i] * w;
+//		}
+//    }
+//
+//    /// Step all the pixel data in the x direction.
     void stepX(const TriangleEquations &eqn) {
         r = eqn.r.stepX(r);
         g = eqn.g.stepX(g);
         b = eqn.b.stepX(b);
     }
 
+//    void stepX(const TriangleEquations &eqn, int aVarCount, int pVarCount, bool interpolateZ, bool interpolateW) {
+//		if (interpolateZ)
+//			z = eqn.z.stepX(z);
+//
+//		if (interpolateW || pVarCount > 0) {
+//			invw = eqn.invw.stepX(invw);
+//			w = 1.0f / invw;
+//		}
+//
+//		for (int i = 0; i < aVarCount; ++i)
+//			avar[i] = eqn.avar[i].stepX(avar[i]);
+//
+//		for (int i = 0; i < pVarCount; ++i) {
+//			pvarTemp[i] = eqn.pvar[i].stepX(pvarTemp[i]);
+//			pvar[i] = pvarTemp[i] * w;
+//		}
+//    }
+//
     /// Step all the pixel data in the y direction.
     void stepY(const TriangleEquations &eqn) {
         r = eqn.r.stepY(r);
         g = eqn.g.stepY(g);
         b = eqn.b.stepY(b);
     }
+
+//    void stepY(const TriangleEquations &eqn, int aVarCount, int pVarCount, bool interpolateZ, bool interpolateW) {
+//        if (interpolateZ)
+//            z = eqn.z.stepY(z);
+//
+//        if (interpolateW || pVarCount > 0) {
+//            invw = eqn.invw.stepY(invw);
+//            w = 1.0f / invw;
+//        }
+//
+//        for (int i = 0; i < aVarCount; ++i) {
+//            avar[i] = eqn.avar[i].stepY(avar[i]);
+//        }
+//
+//        for (int i = 0; i < pVarCount; ++i) {
+//            pvarTemp[i] = eqn.pvar[i].stepY(pvarTemp[i]);
+//            pvar[i] = pvarTemp[i] * w;
+//        }
+//    }
 };
 
 struct EdgeData {
@@ -248,27 +334,28 @@ struct EdgeData {
     }
 };
 
-//class PixelShader : public PixelShaderBase<PixelShader> {
-//public:
-//  static const bool InterpolateZ = false;
-//  static const bool InterpolateW = false;
-//  static const int VarCount = 3;
-//
-//  static SDL_Surface* surface;
-//
-//  static void drawPixel(const PixelData &p)
-//  {
-//    int rint = (int)(p.var[0] * 255);
-//    int gint = (int)(p.var[1] * 255);
-//    int bint = (int)(p.var[2] * 255);
-//
-//    Uint32 color = rint << 16 | gint << 8 | bint;
-//
-//    Uint32 *buffer = (Uint32*)((Uint8 *)surface->pixels + (int)p.y * surface->pitch + (int)p.x * 4);
-//    *buffer = color;
-//  }
-//};
+template <class Derived>
+class PixelShader {
+    public:
+        static const bool InterpolateZ = false;
+        static const bool InterpolateW = false;
+        static const int VarCount = 3;
 
+        static SDL_Surface* surface;
+
+        static void drawPixel(const PixelData &p) {
+        int rint = (int)(p.r * 255);
+        int gint = (int)(p.g * 255);
+        int bint = (int)(p.b * 255);
+
+        Uint32 color = rint << 16 | gint << 8 | bint;
+
+        Uint32 *buffer = (Uint32*)((Uint8 *)surface->pixels + (int)p.y * surface->pitch + (int)p.x * 4);
+        *buffer = color;
+    }
+};
+
+void drawPixel(PixelData);
 void putpixel(SDL_Surface*, int, int, Uint32);
 void drawTriangle(const Vertex&, const Vertex&, const Vertex&, SDL_Surface*);
 template<bool>
@@ -321,6 +408,10 @@ int main(int argc, char* argv[]) {
     return 0;
 }
 
+void drawPixel(PixelData p, SDL_Surface *surface) {
+    putpixel(surface, p.x, p.y, SDL_MapRGB(surface->format, p.r, p.g, p.b));
+}
+
 void putpixel(SDL_Surface *surface, int x, int y, Uint32 pixel) {
     int bpp = surface->format->BytesPerPixel;
     /* Here p is the address to the pixel we want to set */
@@ -356,7 +447,6 @@ void putpixel(SDL_Surface *surface, int x, int y, Uint32 pixel) {
 
 void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surface* surface) {
 
-    int blockSize = 1;
     TriangleEquations eqn(v0, v1, v2);
 
     // Check if triangle is back-facing.
@@ -364,73 +454,98 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
         return;
     }
 
-
-
-//void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surface* surface) {
-
     // Compute triangle bounding box.
     int minX = min(min(v0.x, v1.x), v2.x);
     int maxX = max(max(v0.x, v1.x), v2.x);
     int minY = min(min(v0.y, v1.y), v2.y);
     int maxY = max(max(v0.y, v1.y), v2.y);
   
-    // Clip to scissor rect.
-  //  minX = max(minX, m_minX);
-  //  maxX = min(maxX, m_maxX);
-  //  minY = max(minY, m_minY);
-  //  maxY = min(maxY, m_maxY);
     minX = minX & ~(blockSize - 1);
     maxX = maxX & ~(blockSize - 1);
     minY = minY & ~(blockSize - 1);
     maxY = maxY & ~(blockSize - 1);
 
-    float s = (float)blockSize - 1;
 
   // Add 0.5 to sample at pixel centers
   for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += blockSize) {
-  for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += blockSize)
-  {
-    // Test if block is inside or outside triangle or touches it
-    EdgeData e00; e00.init(eqn, x, y);
-    EdgeData e01 = e00; e01.stepY(eqn, s);
-    EdgeData e10 = e00; e10.stepX(eqn, s);
-    EdgeData e11 = e01; e11.stepX(eqn, s);
+      for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += blockSize){
+            float s = (float) blockSize - 1;
 
-    bool e00_0 = eqn.e0.test(e00.ev0), e00_1 = eqn.e1.test(e00.ev1), e00_2 = eqn.e2.test(e00.ev2), e00_all = e00_0 && e00_1 && e00_2;
-    bool e01_0 = eqn.e0.test(e01.ev0), e01_1 = eqn.e1.test(e01.ev1), e01_2 = eqn.e2.test(e01.ev2), e01_all = e01_0 && e01_1 && e01_2;
-    bool e10_0 = eqn.e0.test(e10.ev0), e10_1 = eqn.e1.test(e10.ev1), e10_2 = eqn.e2.test(e10.ev2), e10_all = e10_0 && e10_1 && e10_2;
-    bool e11_0 = eqn.e0.test(e11.ev0), e11_1 = eqn.e1.test(e11.ev1), e11_2 = eqn.e2.test(e11.ev2), e11_all = e11_0 && e11_1 && e11_2;
+			float e0_00 = eqn.e0.evaluate(x, y);
+			float e0_10 = eqn.e0.stepX(e0_00, s);
+			float e0_01 = eqn.e0.stepY(e0_00, s);
+			float e0_11 = eqn.e0.stepX(e0_01, s);
 
-    int result = e00_all + e01_all + e10_all + e11_all;
+			float e1_00 = eqn.e1.evaluate(x, y);
+			float e1_10 = eqn.e1.stepX(e1_00, s);
+			float e1_01 = eqn.e1.stepY(e1_00, s);
+			float e1_11 = eqn.e1.stepX(e1_01, s);
 
-    // Potentially all out.
-    if (result == 0)
-    {
-      // Test for special case.       
-      bool e00Same = e00_0 == e00_1 == e00_2;
-      bool e01Same = e01_0 == e01_1 == e01_2;
-      bool e10Same = e10_0 == e10_1 == e10_2;
-      bool e11Same = e11_0 == e11_1 == e11_2;
+			float e2_00 = eqn.e2.evaluate(x, y);
+			float e2_10 = eqn.e2.stepX(e2_00, s);
+			float e2_01 = eqn.e2.stepY(e2_00, s);
+			float e2_11 = eqn.e2.stepX(e2_01, s);
 
-      //if (!e00Same || !e01Same || !e10Same || !e11Same)
-//        PixelShader::template drawBlock<true>(eqn, x, y);
-    //}
-    if (result == 4)
-    {
-      // Fully Covered
-      rasterizeBlock<false>(eqn, x, y, surface);
-    }
-    else
-    {
-      // Partially Covered
-      rasterizeBlock<true>(eqn, x, y, surface);
-    }
+			int in0 = eqn.e0.test(e0_00) && eqn.e1.test(e1_00) && eqn.e2.test(e2_00);
+			int in1 = eqn.e0.test(e0_10) && eqn.e1.test(e1_10) && eqn.e2.test(e2_10);
+			int in2 = eqn.e0.test(e0_01) && eqn.e1.test(e1_01) && eqn.e2.test(e2_01);
+			int in3 = eqn.e0.test(e0_11) && eqn.e1.test(e1_11) && eqn.e2.test(e2_11);
+			int sum = in0 + in1 + in2 + in3;
+
+			// All out.
+			if (sum == 0)
+				continue;
+
+		    // Fully Covered
+			if (sum == 4)
+				rasterizeBlock<false>(eqn, x, y, surface);
+		    
+            // Partially Covered
+			else
+				rasterizeBlock<true>(eqn, x, y, surface);
+        }
   }
 }
-}
-}
 
-  
+template <bool TestEdges>
+void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface)
+	{
+		PixelData po;
+		po.init(eqn, x, y);
+
+		EdgeData eo;
+		if (TestEdges)
+			eo.init(eqn, x, y);
+
+		for (float yy = y; yy < y + blockSize; yy += 1.0f)
+		{
+			PixelData pi = po;
+
+			EdgeData ei;
+			if (TestEdges)
+				ei = eo;
+
+			for (float xx = x; xx < x + blockSize; xx += 1.0f)
+			{
+				if (!TestEdges || (eqn.e0.test(ei.ev0) && eqn.e1.test(ei.ev1) && eqn.e2.test(ei.ev2)))
+				{
+					int rint = (int)(pi.r * 255);
+					int gint = (int)(pi.g * 255);
+					int bint = (int)(pi.b * 255);
+					Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
+					putpixel(surface, (int)xx, (int)yy, color);
+				}
+
+				pi.stepX(eqn);
+				if (TestEdges)
+					ei.stepX(eqn);
+			}
+
+			po.stepY(eqn);
+			if (TestEdges)
+				eo.stepY(eqn);
+		}
+}
 
     // Compute edge equations.
 /*    EdgeEquation e0, e1, e2;
@@ -467,42 +582,40 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     }
 }*/
 
-template <bool TestEdges>
-void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface) {
-  int blockSize = 1;
-  PixelData po;
-  po.init(eqn, x, y);
-
-  EdgeData eo;
-  if (TestEdges)
-    eo.init(eqn, x, y);
-
-  for (float yy = y; yy < y + blockSize; yy += 1.0f)
-  {
-    PixelData pi = po;
-
-    EdgeData ei;
-    if (TestEdges)
-      ei = eo;
-
-    for (float xx = x; xx < x + blockSize; xx += 1.0f)
-    {
-      if (!TestEdges || ei.test(eqn))
-      {
-        int rint = (int)(pi.r * 255);
-        int gint = (int)(pi.g * 255);
-        int bint = (int)(pi.b * 255);
-        Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
-        putpixel(surface, (int)xx, (int)yy, color);
-      }
-
-      pi.stepX(eqn);
-      if (TestEdges)
-        ei.stepX(eqn);
-    }
-
-    po.stepY(eqn);
-    if (TestEdges)
-      eo.stepY(eqn);
-  }
-}
+//template <bool TestEdges>
+//void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface) {
+//  PixelData po;
+//  po.init(eqn, x, y);
+//
+//  EdgeData eo;
+//  if (TestEdges)
+//    eo.init(eqn, x, y);
+//
+//  for (float yy = y; yy < y + blockSize; yy += 1.0f) {
+//    PixelData pi = po;
+//
+//    EdgeData ei;
+//    if (TestEdges)
+//      ei = eo;
+//
+//    for (float xx = x; xx < x + blockSize; xx += 1.0f)
+//    {
+//      if (!TestEdges || ei.test(eqn))
+//      {
+//        int rint = (int)(pi.r * 255);
+//        int gint = (int)(pi.g * 255);
+//        int bint = (int)(pi.b * 255);
+//        Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
+//        putpixel(surface, (int)xx, (int)yy, color);
+//      }
+//
+//      pi.z.stepX(eqn);
+//      if (TestEdges)
+//        ei.stepX(eqn);
+//    }
+//
+//    po.z.stepY(eqn);
+//    if (TestEdges)
+//      eo.stepY(eqn);
+//  }
+//}
