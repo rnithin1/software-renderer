@@ -1,14 +1,13 @@
 #include "SDL.h"
+#include <omp.h>
+#include <chrono>
 #include <iostream>
 
 using namespace std;
 
-const int MaxAVars = 16;
-const int MaxPVars = 16;
-const int aVarCount = 16;
-const int pVarCount = 16;
+const int MaxVar = 16;
 
-int blockSize = 1;
+int blockSize = 16;
 
 struct Vertex {
 	float x; // The x component.
@@ -20,11 +19,7 @@ struct Vertex {
     float g;
     float b;
 
-	/// Affine variables.
-	float avar[MaxAVars];
-
-	/// Perspective variables.
-	float pvar[MaxPVars];
+    float var[MaxVar];
 };
 
 struct EdgeEquation {
@@ -147,57 +142,36 @@ struct BaryCoords {
 };
 
 struct TriangleEquations {
-    float area;
+	float area;
 
-    EdgeEquation e0;
-    EdgeEquation e1;
-    EdgeEquation e2;
+	EdgeEquation e0;
+	EdgeEquation e1;
+	EdgeEquation e2;
 
     ParameterEquation r;
     ParameterEquation g;
     ParameterEquation b;
 
-    ParameterEquation z;
-	ParameterEquation invw;
-	ParameterEquation avar[MaxAVars];
-    ParameterEquation pvar[MaxPVars];
+	ParameterEquation z;
+	ParameterEquation w;
+	ParameterEquation var[MaxVar];
 
-    TriangleEquations(
-            const Vertex &v0, 
-            const Vertex &v1, 
-            const Vertex &v2) {
+	TriangleEquations(const Vertex &v0, const Vertex &v1, const Vertex &v2)
+	{
+		e0.init(v0, v1);
+		e1.init(v1, v2);
+		e2.init(v2, v0);
 
-        e0.init(v0, v1);
-        e1.init(v1, v2);
-        e2.init(v2, v0);
+		area = 0.5f * (e0.c + e1.c + e2.c);
 
-        area = 0.5f * (e0.c + e1.c + e2.c);
-        float factor = 1.0f / area;
-        z.init(v0.z, v1.z, v2.z, e0, e1, e2, factor);
-
-        float invw0 = 1.0f / v0.w;
-		float invw1 = 1.0f / v1.w;
-        float invw2 = 1.0f / v2.w;
-
-        // Cull backfacing triangles.
-        if (area < 0) {
-            return;
-        }
+		// Cull backfacing triangles.
+		if (area < 0)
+			return;
 
         r.init(v0.r, v1.r, v2.r, e0, e1, e2, area);
-        g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
+		g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
         b.init(v0.b, v1.b, v2.b, e0, e1, e2, area);
-
-        invw.init(invw0, invw1, invw2, e0, e1, e2, factor);
-
-		for (int i = 0; i < aVarCount; ++i) {
-			avar[i].init(v0.avar[i], v1.avar[i], v2.avar[i], e0, e1, e2, factor);
-        }
-
-		for (int i = 0; i < pVarCount; ++i) {
-pvar[i].init(v0.pvar[i] * invw0, v1.pvar[i] * invw1, v2.pvar[i] * invw2, e0, e1, e2, factor);
-        }
-    }
+	}
 };
 
 struct PixelData {
@@ -278,7 +252,6 @@ struct EdgeData {
     }
 };
 
-template <class Derived>
 class PixelShader {
     public:
         static const bool InterpolateZ = false;
@@ -390,6 +363,7 @@ void putpixel(SDL_Surface *surface, int x, int y, Uint32 pixel) {
 
 
 void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surface* surface) {
+    auto start = chrono::steady_clock::now();
 
     TriangleEquations eqn(v0, v1, v2);
 
@@ -409,46 +383,41 @@ void drawTriangle(const Vertex& v0, const Vertex& v1, const Vertex& v2, SDL_Surf
     minY = minY & ~(blockSize - 1);
     maxY = maxY & ~(blockSize - 1);
 
+    int stepsX = (maxX - minX) / blockSize + 1;
+    int stepsY = (maxY - minY) / blockSize + 1;
+    float s = (float) blockSize - 1;
 
-  // Add 0.5 to sample at pixel centers
-  for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += blockSize) {
-      for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += blockSize){
-            float s = (float) blockSize - 1;
+    // Add 0.5 to sample at pixel centers
+    #pragma omp parallel for
+    for (int i = 0; i < stepsX * stepsY; ++i) {
+        int sx = i / stepsY;
+        int sy = i % stepsY;
 
-			float e0_00 = eqn.e0.evaluate(x, y);
-			float e0_10 = eqn.e0.stepX(e0_00, s);
-			float e0_01 = eqn.e0.stepY(e0_00, s);
-			float e0_11 = eqn.e0.stepX(e0_01, s);
+        // Add 0.5 to sample at pixel centers.
+        float x = minX + sx * blockSize + 0.5f;
+        float y = minY + sy * blockSize + 0.5f;
 
-			float e1_00 = eqn.e1.evaluate(x, y);
-			float e1_10 = eqn.e1.stepX(e1_00, s);
-			float e1_01 = eqn.e1.stepY(e1_00, s);
-			float e1_11 = eqn.e1.stepX(e1_01, s);
+        // Test if block is inside or outside triangle or touches it.
+        EdgeData e00; e00.init(eqn, x, y);
+        EdgeData e01 = e00; e01.stepY(eqn, s);
+        EdgeData e10 = e00; e10.stepX(eqn, s);
+        EdgeData e11 = e01; e11.stepX(eqn, s);
 
-			float e2_00 = eqn.e2.evaluate(x, y);
-			float e2_10 = eqn.e2.stepX(e2_00, s);
-			float e2_01 = eqn.e2.stepY(e2_00, s);
-			float e2_11 = eqn.e2.stepX(e2_01, s);
+        int result = e00.test(eqn) + e01.test(eqn) + e10.test(eqn) + e11.test(eqn);
 
-			int in0 = eqn.e0.test(e0_00) && eqn.e1.test(e1_00) && eqn.e2.test(e2_00);
-			int in1 = eqn.e0.test(e0_10) && eqn.e1.test(e1_10) && eqn.e2.test(e2_10);
-			int in2 = eqn.e0.test(e0_01) && eqn.e1.test(e1_01) && eqn.e2.test(e2_01);
-			int in3 = eqn.e0.test(e0_11) && eqn.e1.test(e1_11) && eqn.e2.test(e2_11);
-			int sum = in0 + in1 + in2 + in3;
+        // All out.
+        if (result == 0)
+            continue;
 
-			// All out.
-			if (sum == 0)
-				continue;
-
-		    // Fully Covered
-			if (sum == 4)
-				rasterizeBlock<false>(eqn, x, y, surface);
-		    
+        if (result == 4)
+            // Fully Covered
+            rasterizeBlock<false>(eqn, x, y, surface);
+        else
             // Partially Covered
-			else
-				rasterizeBlock<true>(eqn, x, y, surface);
-        }
-  }
+            rasterizeBlock<true>(eqn, x, y, surface);
+    }
+    auto end = chrono::steady_clock::now();
+    cout << chrono::duration_cast<chrono::microseconds>(end - start).count() << endl;
 }
 
 template <bool TestEdges>
