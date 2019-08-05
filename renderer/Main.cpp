@@ -217,75 +217,19 @@ struct PixelData {
         g = eqn.g.evaluate(x, y);
         b = eqn.b.evaluate(x, y);
     }
-    // Initialize pixel data for the given pixel coordinates.
-//	void init(const TriangleEquations &eqn, float x, float y, int aVarCount, int pVarCount, bool interpolateZ, bool interpolateW) {
-//
-//		if (interpolateZ)
-//			z = eqn.z.evaluate(x, y);
-//if (interpolateW || pVarCount > 0) { invw = eqn.invw.evaluate(x, y);
-//			w = 1.0f / invw;
-//		}
-//
-//		for (int i = 0; i < aVarCount; ++i) {
-//			avar[i] = eqn.avar[i].evaluate(x, y);
-//        }
-//
-//		for (int i = 0; i < pVarCount; ++i) {
-//			pvarTemp[i] = eqn.pvar[i].evaluate(x, y);
-//			pvar[i] = pvarTemp[i] * w;
-//		}
-//    }
-//
-//    /// Step all the pixel data in the x direction.
+    /// Step all the pixel data in the x direction.
     void stepX(const TriangleEquations &eqn) {
         r = eqn.r.stepX(r);
         g = eqn.g.stepX(g);
         b = eqn.b.stepX(b);
     }
 
-//    void stepX(const TriangleEquations &eqn, int aVarCount, int pVarCount, bool interpolateZ, bool interpolateW) {
-//		if (interpolateZ)
-//			z = eqn.z.stepX(z);
-//
-//		if (interpolateW || pVarCount > 0) {
-//			invw = eqn.invw.stepX(invw);
-//			w = 1.0f / invw;
-//		}
-//
-//		for (int i = 0; i < aVarCount; ++i)
-//			avar[i] = eqn.avar[i].stepX(avar[i]);
-//
-//		for (int i = 0; i < pVarCount; ++i) {
-//			pvarTemp[i] = eqn.pvar[i].stepX(pvarTemp[i]);
-//			pvar[i] = pvarTemp[i] * w;
-//		}
-//    }
-//
     /// Step all the pixel data in the y direction.
     void stepY(const TriangleEquations &eqn) {
         r = eqn.r.stepY(r);
         g = eqn.g.stepY(g);
         b = eqn.b.stepY(b);
     }
-
-//    void stepY(const TriangleEquations &eqn, int aVarCount, int pVarCount, bool interpolateZ, bool interpolateW) {
-//        if (interpolateZ)
-//            z = eqn.z.stepY(z);
-//
-//        if (interpolateW || pVarCount > 0) {
-//            invw = eqn.invw.stepY(invw);
-//            w = 1.0f / invw;
-//        }
-//
-//        for (int i = 0; i < aVarCount; ++i) {
-//            avar[i] = eqn.avar[i].stepY(avar[i]);
-//        }
-//
-//        for (int i = 0; i < pVarCount; ++i) {
-//            pvarTemp[i] = eqn.pvar[i].stepY(pvarTemp[i]);
-//            pvar[i] = pvarTemp[i] * w;
-//        }
-//    }
 };
 
 struct EdgeData {
@@ -547,75 +491,3 @@ void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface*
 		}
 }
 
-    // Compute edge equations.
-/*    EdgeEquation e0, e1, e2;
-    e0.init(v0, v1);
-    e1.init(v1, v2);
-    e2.init(v2, v0);
-  
-    float area = 0.5 * (e0.c + e1.c + e2.c);
-  
-    ParameterEquation r, g, b;
-    r.init(v0.r, v1.r, v2.r, e0, e1, e2, area);
-    g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
-    b.init(v0.b, v1.b, v2.b, e0, e1, e2, area);
-  
-    // Check if triangle is backfacing.
-//    if (area < 0) {
-//        return;
-//    }
-  
-    // Add 0.5 to sample at pixel centers.
-    for (float x = minX + 0.5f, xm = maxX + 0.5f; x <= xm; x += 1.0f) {
-        for (float y = minY + 0.5f, ym = maxY + 0.5f; y <= ym; y += 1.0f) {
-//            BaryCoords bc(v0, v1, v2, x, y);
-            if (e0.test(x, y) && e1.test(x, y) && e2.test(x, y)) {
-            //if (bc.wv0 >= 0 && bc.wv1 >= 0 && bc.wv2 >= 0) {
-                int rint = r.evaluate(x, y) * 255;
-                int gint = g.evaluate(x, y) * 255;
-                int bint = b.evaluate(x, y) * 255;
-                Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
-                //Uint32 color = SDL_MapRGB(surface->format, bc.r, bc.g, bc.b);
-                putpixel(surface, x, y, color);
-            }
-        }
-    }
-}*/
-
-//template <bool TestEdges>
-//void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface) {
-//  PixelData po;
-//  po.init(eqn, x, y);
-//
-//  EdgeData eo;
-//  if (TestEdges)
-//    eo.init(eqn, x, y);
-//
-//  for (float yy = y; yy < y + blockSize; yy += 1.0f) {
-//    PixelData pi = po;
-//
-//    EdgeData ei;
-//    if (TestEdges)
-//      ei = eo;
-//
-//    for (float xx = x; xx < x + blockSize; xx += 1.0f)
-//    {
-//      if (!TestEdges || ei.test(eqn))
-//      {
-//        int rint = (int)(pi.r * 255);
-//        int gint = (int)(pi.g * 255);
-//        int bint = (int)(pi.b * 255);
-//        Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
-//        putpixel(surface, (int)xx, (int)yy, color);
-//      }
-//
-//      pi.z.stepX(eqn);
-//      if (TestEdges)
-//        ei.stepX(eqn);
-//    }
-//
-//    po.z.stepY(eqn);
-//    if (TestEdges)
-//      eo.stepY(eqn);
-//  }
-//}
