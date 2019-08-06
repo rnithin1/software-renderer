@@ -1,276 +1,14 @@
 #include "SDL.h"
+#include "Equations.h"
+#include "Data.h"
+#include "Shaders.h"
 #include <omp.h>
 #include <chrono>
 #include <iostream>
 
 using namespace std;
 
-const int MaxVar = 16;
-
-int blockSize = 16;
-
-struct Vertex {
-	float x; // The x component.
-	float y; // The y component.
-	float z; // The z component.
-	float w; // The w component.
-
-    float r;
-    float g;
-    float b;
-
-    float var[MaxVar];
-};
-
-struct EdgeEquation {
-    float a;
-    float b;
-    float c;
-    bool tie;
-  
-    void init (const Vertex &v0, const Vertex &v1) {
-        a = v0.y - v1.y;
-        b = v1.x - v0.x;
-        c = -(a * (v0.x + v1.x) + b * (v0.y + v1.y)) / 2;
-        tie = a != 0 ? a > 0 : b > 0;
-    }
-  
-    // Evaluate the edge equation for the given point.
-    float evaluate(float x, float y) const {
-        return a * x + b * y + c;
-    }
-  
-    // Test if the given point is inside the edge.
-    bool test(float x, float y) const {
-        return test(evaluate(x, y));
-    }
-  
-    // Test for a given evaluated value.
-    bool test(float v) const {
-        return (v > 0 || (v == 0 && tie));
-    }
-
-    float stepX(float v) const {
-        return v + a;
-    }
-
-    // Step the equation value v to the x direction.
-    float stepX(float v, float stepSize) const {
-        return v + a * stepSize;
-    }
-
-    // Step the equation value v to the y direction.
-    float stepY(float v) const {
-        return v + b;
-    }
-
-    // Step the equation value vto the y direction.
-    float stepY(float v, float stepSize) const {
-        return v + b * stepSize;
-    }
-};
-
-struct ParameterEquation {
-    float a;
-    float b;
-    float c;
-  
-    void init (
-        float p0,
-        float p1,
-        float p2,
-        const EdgeEquation &e0,
-        const EdgeEquation &e1,
-        const EdgeEquation &e2,
-        float area) {
-        float factor = 1.0f / (2.0f * area);
-  
-        a = factor * (p0 * e0.a + p1 * e1.a + p2 * e2.a);
-        b = factor * (p0 * e0.b + p1 * e1.b + p2 * e2.b);
-        c = factor * (p0 * e0.c + p1 * e1.c + p2 * e2.c);
-    }
-  
-    // Evaluate the parameter equation for the given point.
-    float evaluate(float x, float y) const {
-        return a * x + b * y + c;
-    }
-
-    float stepX(float v) const {
-        return v + a;
-    }
-
-    // Step the equation value v to the x direction.
-    float stepX(float v, float stepSize) const {
-        return v + a * stepSize;
-    }
-
-    // Step the equation value v to the y direction.
-    float stepY(float v) const {
-        return v + b;
-    }
-
-    // Step the equation value vto the y direction.
-    float stepY(float v, float stepSize) const {
-        return v + b * stepSize;
-    }
-};
-
-struct BaryCoords {
-    float r;
-    float g;
-    float b;
-    float wv0;
-    float wv1;
-    float wv2;
-
-    BaryCoords(
-            const Vertex& v0, 
-            const Vertex& v1,
-            const Vertex& v2,
-            float px,
-            float py) {
-        
-        float denom = (v1.y - v2.y) * (v0.x - v2.x) + (v2.x - v1.x) * (v0.y - v2.y); 
-        wv0 = ((v1.y - v2.y) * (px - v2.x) + (v2.x - v1.x) * (py - v2.y)) / denom; 
-        wv1 = ((v2.y - v0.y) * (px - v2.x) + (v0.x - v2.x) * (py - v2.y)) / denom;
-        wv2 = 1 - wv0 - wv1;
-        r = wv0 * v0.r + wv1 * v1.r + wv2 * v2.r;
-        g = wv0 * v0.g + wv1 * v1.g + wv2 * v2.g;
-        b = wv0 * v0.b + wv1 * v1.b + wv2 * v2.b;
-    }
-
-};
-
-struct TriangleEquations {
-	float area;
-
-	EdgeEquation e0;
-	EdgeEquation e1;
-	EdgeEquation e2;
-
-    ParameterEquation r;
-    ParameterEquation g;
-    ParameterEquation b;
-
-	ParameterEquation z;
-	ParameterEquation w;
-	ParameterEquation var[MaxVar];
-
-	TriangleEquations(const Vertex &v0, const Vertex &v1, const Vertex &v2)
-	{
-		e0.init(v0, v1);
-		e1.init(v1, v2);
-		e2.init(v2, v0);
-
-		area = 0.5f * (e0.c + e1.c + e2.c);
-
-		// Cull backfacing triangles.
-		if (area < 0)
-			return;
-
-        r.init(v0.r, v1.r, v2.r, e0, e1, e2, area);
-		g.init(v0.g, v1.g, v2.g, e0, e1, e2, area);
-        b.init(v0.b, v1.b, v2.b, e0, e1, e2, area);
-	}
-};
-
-struct PixelData {
-    float r;
-    float g;
-    float b;
-
-    float x;
-    float y;
-
-    /// Initialize pixel data for the given pixel coordinates.
-    void init(const TriangleEquations &eqn, float xi, float yi) {
-        x = xi;
-        y = yi;
-
-        r = eqn.r.evaluate(x, y);
-        g = eqn.g.evaluate(x, y);
-        b = eqn.b.evaluate(x, y);
-    }
-    /// Step all the pixel data in the x direction.
-    void stepX(const TriangleEquations &eqn) {
-        r = eqn.r.stepX(r);
-        g = eqn.g.stepX(g);
-        b = eqn.b.stepX(b);
-    }
-
-    /// Step all the pixel data in the y direction.
-    void stepY(const TriangleEquations &eqn) {
-        r = eqn.r.stepY(r);
-        g = eqn.g.stepY(g);
-        b = eqn.b.stepY(b);
-    }
-};
-
-struct EdgeData {
-    float ev0;
-    float ev1;
-    float ev2;
-
-    /// Initialize the edge data values.
-    void init(const TriangleEquations &eqn, float x, float y) {
-        ev0 = eqn.e0.evaluate(x, y);
-        ev1 = eqn.e1.evaluate(x, y);
-        ev2 = eqn.e2.evaluate(x, y);
-    }
-
-    /// Step the edge values in the x direction.
-    void stepX(const TriangleEquations &eqn) {
-        ev0 = eqn.e0.stepX(ev0);
-        ev1 = eqn.e1.stepX(ev1);
-        ev2 = eqn.e2.stepX(ev2);
-    }
-
-    /// Step the edge values in the x direction.
-    void stepX(const TriangleEquations &eqn, float stepSize) {
-        ev0 = eqn.e0.stepX(ev0, stepSize);
-        ev1 = eqn.e1.stepX(ev1, stepSize);
-        ev2 = eqn.e2.stepX(ev2, stepSize);
-    }
-
-    /// Step the edge values in the y direction.
-    void stepY(const TriangleEquations &eqn) {
-        ev0 = eqn.e0.stepY(ev0);
-        ev1 = eqn.e1.stepY(ev1);
-        ev2 = eqn.e2.stepY(ev2);
-    }
-
-    /// Step the edge values in the y direction.
-    void stepY(const TriangleEquations &eqn, float stepSize) {
-        ev0 = eqn.e0.stepY(ev0, stepSize);
-        ev1 = eqn.e1.stepY(ev1, stepSize);
-        ev2 = eqn.e2.stepY(ev2, stepSize);
-    }
-
-    /// Test for triangle containment.
-    bool test(const TriangleEquations &eqn) {
-        return eqn.e0.test(ev0) && eqn.e1.test(ev1) && eqn.e2.test(ev2);
-    }
-};
-
-class PixelShader {
-    public:
-        static const bool InterpolateZ = false;
-        static const bool InterpolateW = false;
-        static const int VarCount = 3;
-
-        static SDL_Surface* surface;
-
-        static void drawPixel(const PixelData &p) {
-        int rint = (int)(p.r * 255);
-        int gint = (int)(p.g * 255);
-        int bint = (int)(p.b * 255);
-
-        Uint32 color = rint << 16 | gint << 8 | bint;
-
-        Uint32 *buffer = (Uint32*)((Uint8 *)surface->pixels + (int)p.y * surface->pitch + (int)p.x * 4);
-        *buffer = color;
-    }
-};
+int blockSize = 1;
 
 void drawPixel(PixelData);
 void putpixel(SDL_Surface*, int, int, Uint32);
@@ -460,37 +198,45 @@ void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface*
 }
 
 template <bool TestEdges>
-void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface, const Vertex& v0, const Vertex& v1, const Vertex& v2) {
-		PixelData po;
-		po.init(eqn, x, y);
+void rasterizeBlock(const TriangleEquations &eqn, float x, float y, SDL_Surface* surface, const Vertex& v0, const Vertex& v1, const Vertex& v2) { 
+    PixelData po;
+    po.init(eqn, x, y);
 
-		EdgeData eo;
-		if (TestEdges) {
-            eo.init(eqn, x, y);
+    EdgeData eo;
+    if (TestEdges) {
+        eo.init(eqn, x, y);
+    }
+
+    for (float yy = y; yy < y + blockSize; yy += 1.0f) {
+        PixelData pi = po;
+
+        EdgeData ei;
+        if (TestEdges) {
+            ei = eo;
         }
 
-		for (float yy = y; yy < y + blockSize; yy += 1.0f) {
-			PixelData pi = po;
+        for (float xx = x; xx < x + blockSize; xx += 1.0f) {
+            if (!TestEdges || (eqn.e0.test(ei.ev0) && eqn.e1.test(ei.ev1) && eqn.e2.test(ei.ev2))) {
+                int rint = (int)(pi.r * 255);
+                int gint = (int)(pi.g * 255);
+                int bint = (int)(pi.b * 255);
+                Uint32 color = SDL_MapRGB(surface->format, rint, gint, bint);
+                putpixel(surface, (int)xx, (int)yy, color);
+//                    BaryCoords bc(v0, v1, v2, x, y);
+//                    Uint32 color = SDL_MapRGB(surface->format, bc.r, bc.g, bc.b);
+//					putpixel(surface, (int)xx, (int)yy, color);
+            }
 
-			EdgeData ei;
-			if (TestEdges)
-				ei = eo;
+            pi.stepX(eqn);
+            if (TestEdges) {
+                ei.stepX(eqn);
+            }
+        }
 
-			for (float xx = x; xx < x + blockSize; xx += 1.0f) {
-				if (!TestEdges || (eqn.e0.test(ei.ev0) && eqn.e1.test(ei.ev1) && eqn.e2.test(ei.ev2))) {
-                    BaryCoords bc(v0, v1, v2, x, y);
-                    Uint32 color = SDL_MapRGB(surface->format, bc.r, bc.g, bc.b);
-					putpixel(surface, (int)xx, (int)yy, color);
-				}
-
-				pi.stepX(eqn);
-				if (TestEdges)
-					ei.stepX(eqn);
-			}
-
-			po.stepY(eqn);
-			if (TestEdges)
-				eo.stepY(eqn);
-		}
+        po.stepY(eqn);
+        if (TestEdges) {
+            eo.stepY(eqn);
+        }
+    }
 }
 
