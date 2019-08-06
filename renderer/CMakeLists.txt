@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.7)
 
 project(renderer)
 
-set(SOURCE_FILES Main.cpp Equations.h Data.h Shaders.h)
+set(SOURCE_FILES Main.cpp Equations.h Data.h Shaders.h Rasterizer.h)
 
 set(CMAKE_C_COMPILER "/usr/local/Cellar/llvm/8.0.0_1/bin/clang")
 set(CMAKE_CXX_COMPILER "/usr/local/Cellar/llvm/8.0.0_1/bin/clang++")
